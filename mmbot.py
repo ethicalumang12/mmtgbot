@@ -60,7 +60,7 @@ class HeroBot:
         # Llama 3.3 for Text
         self.model_txt = "llama-3.3-70b-versatile"
         # Llama 3.2 11b for Vision
-        self.model_vision = "llama-3.2-11b-vision-preview" 
+        self.model_vision = "llama-3.2-90b-vision-preview" 
         # Whisper for Audio
         self.model_audio = "distil-whisper-large-v3-en"
 
@@ -631,3 +631,4 @@ if __name__ == "__main__":
     if sys.platform.startswith("win"):
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     main()
+
