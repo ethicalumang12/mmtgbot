@@ -9,7 +9,7 @@ import asyncio
 import aiohttp
 import io
 import base64
-import psutil  # NEW: For System Stats
+import psutil  # Required for System Stats
 
 from dotenv import load_dotenv
 from gtts import gTTS
@@ -17,7 +17,7 @@ from telegram import Update, Poll, ChatPermissions
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackQueryHandler
 from telegram.constants import ChatAction, ParseMode
-from telegram.request import HTTPXRequest
+from telegram.request import HTTPXRequest # Connection optimization
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -56,9 +56,12 @@ class HeroBot:
         # Track start time for Uptime
         self.bot_start_time = time.time()
 
-        # Models
+        # --- MODELS ---
+        # Llama 3.3 for Text
         self.model_txt = "llama-3.3-70b-versatile"
+        # Llama 3.2 11b for Vision
         self.model_vision = "llama-3.2-11b-vision-preview" 
+        # Whisper for Audio
         self.model_audio = "distil-whisper-large-v3-en"
 
         self.system_prompt = (
@@ -119,12 +122,9 @@ class HeroBot:
         if os.path.exists(path):
             os.remove(path)
 
-    # -------- POINTS & BADGES --------
-    def get_points(self, user_id: int) -> int:
-        return self.user_points.get(user_id, 0)
-
+    # -------- POINTS --------
     def add_points(self, user_id: int, pts: int):
-        self.user_points[user_id] = self.get_points(user_id) + pts
+        self.user_points[user_id] = self.user_points.get(user_id, 0) + pts
 
     # -------- CORE AI --------
     async def ai_reply(self, user_text: str, memory: str, system_override: str = None) -> str:
@@ -144,7 +144,7 @@ class HeroBot:
             logger.exception("Groq error")
             return f"❌ AI Error: {e}"
 
-    # -------- FEATURES: VISION & VOICE --------
+    # -------- VISION & VOICE --------
     async def analyze_image(self, image_bytes: bytes, caption: str = "") -> str:
         try:
             base64_image = base64.b64encode(image_bytes).decode('utf-8')
@@ -170,7 +170,7 @@ class HeroBot:
             return res.choices[0].message.content.strip()
         except Exception as e:
             logger.error(f"Vision Error: {e}")
-            return "❌ I couldn't analyze that image."
+            return f"❌ Vision Error: {e}"
 
     async def transcribe_audio(self, audio_bytes: bytes, filename: str) -> str:
         try:
@@ -179,7 +179,7 @@ class HeroBot:
             transcription = await self.client.audio.transcriptions.create(
                 file=(filename, file_like.getvalue()),
                 model=self.model_audio,
-                prompt="The user is talking to an AI assistant named M.I.S.H.R.A",
+                prompt="User talking to M.I.S.H.R.A",
                 language="en"
             )
             return transcription.text
@@ -191,18 +191,16 @@ class HeroBot:
     async def weather_info(self, city: str) -> str:
         if not self.weather_key: return "❌ Weather API key not set."
         url = "http://api.openweathermap.org/data/2.5/weather"
-        params = {"q": city, "appid": self.weather_key, "units": "metric"}
         try:
-            res = await self.fetch_async(url, params=params)
+            res = await self.fetch_async(url, params={"q": city, "appid": self.weather_key, "units": "metric"})
             return f"Weather in {res['name']}: {res['main']['temp']}°C, {res['weather'][0]['description']}."
         except: return "❌ Weather fetch failed."
 
     async def news_summary(self) -> str:
         if not self.news_key: return "❌ News API key not set."
         url = "https://newsapi.org/v2/top-headlines"
-        params = {"country": "us", "apiKey": self.news_key}
         try:
-            res = await self.fetch_async(url, params=params)
+            res = await self.fetch_async(url, params={"country": "us", "apiKey": self.news_key})
             headlines = [a["title"] for a in res["articles"][:3]]
             return "📰 Top News:\n" + "\n".join(f"• {h}" for h in headlines)
         except: return "❌ News fetch failed."
@@ -227,24 +225,22 @@ class HeroBot:
         except Exception as e:
             logger.error(f"Error saving confession: {e}")
 
-    # -------- UPDATED PING COMMAND --------
+    # -------- SYSTEM MONITOR (RESTORED) --------
     async def ping_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        # 1. Measure Latency
         start_time = time.time()
         msg = await update.message.reply_text("🏓 ᴘɪɴɢɪɴɢ...")
         end_time = time.time()
         ping_time = (end_time - start_time) * 1000
 
-        # 2. Get System Stats
+        # System Stats (Requires psutil)
         cpu = psutil.cpu_percent()
         ram = psutil.virtual_memory().percent
         disk = psutil.disk_usage('/').percent
         
-        # 3. Calculate Uptime
+        # Uptime Calculation
         uptime_seconds = int(time.time() - self.bot_start_time)
-        uptime_string = str(datetime.timedelta(seconds=uptime_seconds)).split(".")[0] # H:M:S
+        uptime_string = str(datetime.timedelta(seconds=uptime_seconds)).split(".")[0]
 
-        # 4. Stylized Output
         text = (
             f"🏓 ᴘɪɴɢ..ᴩᴏɴɢ : {ping_time:.3f}ᴍs..\n\n"
             f"❖ sʏsᴛᴇᴍ sᴛᴀᴛs :\n\n"
@@ -254,7 +250,6 @@ class HeroBot:
             f":⧽❖ ᴅɪsᴋ : {disk}%\n\n"
             f":⧽❖ ʙʏ » mayank ♡︎"
         )
-
         await msg.edit_text(text)
 
     # -------- GROUP MANAGEMENT (ADMIN) --------
@@ -555,8 +550,15 @@ def main():
 
     hero = HeroBot(groq_key)
     
-    # FIX: Increase Timeouts for Speed/Stability
-    request_params = HTTPXRequest(connection_pool_size=10, read_timeout=120.0, write_timeout=120.0, connect_timeout=120.0, pool_timeout=120.0)
+    # CONNECTION OPTIMIZATION (Fixes TimedOut errors)
+    request_params = HTTPXRequest(
+        connection_pool_size=10, 
+        read_timeout=120.0, 
+        write_timeout=120.0, 
+        connect_timeout=60.0, 
+        pool_timeout=60.0
+    )
+    
     app = ApplicationBuilder().token(tg_token).request(request_params).build()
 
     # Wrappers
@@ -579,7 +581,7 @@ def main():
         hero.clear_memory(u.effective_user.id)
         await u.message.reply_text("Forgot everything.")
 
-    # Register Handlers
+    # Admin Handlers
     app.add_handler(CommandHandler("promote", hero.promote_cmd))
     app.add_handler(CommandHandler("demote", hero.demote_cmd))
     app.add_handler(CommandHandler("ban", hero.ban_cmd))
@@ -590,6 +592,7 @@ def main():
     app.add_handler(CommandHandler(["del", "delete"], hero.delete_cmd))
     app.add_handler(CommandHandler("purge", hero.purge_cmd))
 
+    # General Handlers
     app.add_handler(CommandHandler("start", hero.start))
     app.add_handler(CommandHandler("ping", hero.ping_cmd))
     app.add_handler(CommandHandler("remind", hero.remind))
@@ -615,6 +618,7 @@ def main():
     app.add_handler(CommandHandler("memory", mem_wrapper))
     app.add_handler(CommandHandler("forget", forget_wrapper))
 
+    # Message Handlers
     app.add_handler(MessageHandler(filters.PHOTO, hero.handle_photo))
     app.add_handler(MessageHandler(filters.VOICE, hero.handle_voice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, hero.handle_text))
